@@ -12,6 +12,8 @@ import TD3_ad
 import robosuite as suite
 from torch.utils.tensorboard import SummaryWriter
 import time 
+import multiprocessing as mp
+from functools import partial
 
 
 
@@ -95,7 +97,7 @@ def main(args, param):
     max_action = 1
     pathname = str(args.env) + '_batch_size_' + str(args.batch_size) + '_start_learn_' + str(args.start_timesteps)
     pathname +=  "_seed_" + str(args.seed) + "_state_dim_" + str(state_dim)
-    pathname += "num_q_target" + str(args.num_q_target) + "updat_freq" + str(args.target_update_freq)
+    pathname += "num_q_target" + str(param) + "updat_freq" + str(args.target_update_freq)
     print(pathname)
     tensorboard_name = 'runs/' + pathname
     writer = SummaryWriter(tensorboard_name)
@@ -124,7 +126,7 @@ def main(args, param):
         policy_file = file_name if args.load_model == "default" else args.load_model
         policy.load(f"./models/{policy_file}")
 
-    kwargs["num_q_target"] = args.num_q_target
+    kwargs["num_q_target"] = param
     policy = TD3_ad.TD3_ad(**kwargs)
     replay_buffer = utils.ReplayBuffer(state_dim, action_dim)
     # Evaluate untrained policy
@@ -194,6 +196,11 @@ def main(args, param):
 
 
 
+
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default="TD3")                  # Policy name (TD3, DDPG or OurDDPG)
@@ -201,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=0, type=int)              # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--start_timesteps", default=25e3, type=int)# Time steps initial random policy is used
     parser.add_argument("--eval_freq", default=25e3, type=int)       # How often (time steps) we evaluate
-    parser.add_argument("--max_timesteps", default=5e5, type=int)   # Max time steps to run environment
+    parser.add_argument("--max_timesteps", default=1e6, type=int)   # Max time steps to run environment
     parser.add_argument("--expl_noise", default=0.1)                # Std of Gaussian exploration noise
     parser.add_argument("--batch_size", default=256, type=int)      # Batch size for both actor and critic
     parser.add_argument("--discount", default=0.99)                 # Discount factor
@@ -209,11 +216,17 @@ if __name__ == "__main__":
     parser.add_argument("--policy_noise", default=0.2)              # Noise added to target policy during critic update
     parser.add_argument("--noise_clip", default=0.5)                # Range to clip target policy noise
     parser.add_argument("--policy_freq", default=2, type=int)            # Frequency of delayed policy updates
-    parser.add_argument("--tensorboard_freq", default=500, type=int)     # Frequency of delayed policy updates
-    parser.add_argument("--target_update_freq", default=100, type=int)   #  Frequency of hard updates
-    parser.add_argument("--num_q_target", default=2, type=int)   #  Frequency of hard updates
+    parser.add_argument("--tensorboard_freq", default=50, type=int)     # Frequency of delayed policy updates
+    parser.add_argument("--target_update_freq", default=500, type=int)   #  Frequency of hard updates
     parser.add_argument("--reward_scaling", default=10, type=int)        # Frequency of delayed policy updates
     parser.add_argument("--save_model", action="store_true")             # Save model and optimizer parameters
     parser.add_argument("--load_model", default="")                      # Model load file name, "" doesn't load, "default" uses file_name
     args = parser.parse_args()
-    main(args, 6)
+
+    processes = []
+    pool = mp.Pool()
+    seeds = [4, 8, 12, 16]
+    func = partial(main, args)
+    pool.map(func, seeds)
+    pool.close()
+
