@@ -1,44 +1,27 @@
 # Copyright 2020
 # Author: Christian Leininger <info2016frei@gmail.com>
  
-import os
-import sys 
-import cv2
 import time
-import torch 
 import random
-import numpy as np
-from DDPG import DDPG
 import robosuite as suite
-from collections import deque
 from datetime import datetime
-from memory import ReplayBuffer
-from models import CNNStemNetwork
-from agent_average_v1 import TD31v1
+import numpy as np
+import os
+from collections import deque
 from torch.utils.tensorboard import SummaryWriter
+import torch 
+from agent_average_v1 import TD31v1
+from memory import ReplayBuffer
 
-from PIL import Image
 
-def stacked_frames(state, size, args, perception, debug=False):
-    state = state["image"]
-    if debug:
-        img = Image.fromarray(state, 'RGB')
-        img.save('my.png')
-        img.show()
-        img = Image.fromarray(lum_img, 'L')
-        img.save('my_gray.png')
-    state = state[:,:,0]
-    state = torch.tensor(state, dtype=torch.float32, device=args.device).div_(255)
-    zeros = torch.zeros_like(state)
-    state_buffer = deque([], maxlen=args.history_length)
-    state_buffer.append(zeros)
-    state_buffer.append(zeros)
-    state_buffer.append(zeros)
-    state_buffer.append(state)
-    state = torch.stack(list(state_buffer), 0)
-    state = state.type(torch.FloatTensor).unsqueeze(0)
-    state = perception(state)
-    return state, state_buffer
+
+def createstate(state):
+    all_states = np.array([])
+    for key  in state.keys():
+        all_states = np.concatenate((all_states, state[key]))
+    return all_states
+
+
 
 
 def mkdir(base, name):
@@ -71,7 +54,7 @@ def evaluate_policy(policy, writer, total_timesteps, args, episode = 1):
         env = suite.make(args.env_name, has_renderer=False,has_offscreen_renderer=False, use_object_obs=True, use_camera_obs=False, reward_shaping=True,)
     # env_e = wrappers.Monitor(env, monitor_dir, force = True)
     avg_reward = 0.
-    seeds = [x for x in range(2)]
+    seeds = [x for x in range(10)]
     for s in seeds:
         if use_gym:
             env.seed(s)
@@ -118,38 +101,31 @@ def time_format(sec):
 
 
 
-def train(args, param):
+def train(args, repeat_opt):
     """
 
     Args:
+        param1(TD3): policy
+        param2(Buffer):
+        param3(openai env):
     """
-    
-    # create CNN convert the [1,3,84,84] to [1, 200]
-    input_dim = [3, 84, 84]
-    conv_hidden_dim = 200
-    conv_out_channels = [16, 32]
-    conv_kernel_sizes = [8, 4]
-    conv_strides = [4, 2]
-    perception = CNNStemNetwork(input_dim, conv_hidden_dim, conv_channels=conv_out_channels, kernel_sizes=conv_kernel_sizes, strides=conv_strides)
-    
     use_gym = False
     # in case seed experements
-    args.seed = param
+    args.seed = repeat_opt
     now = datetime.now()    
     dt_string = now.strftime("%d_%m_%Y_%H:%M:%S")
     #args.repeat_opt = repeat_opt
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    pathname = 'env-' + str(args.env_name) + '-agent-' + str(args.policy)
-    pathname += '_update_freq: ' + str(args.target_update_freq) + "num_q_target_" + str(args.num_q_target) + "_seed_" + str(args.seed)
+    pathname = 'env-' + str(args.env_name) + '_update_freq: ' + str(args.target_update_freq) + "num_q_target_" + str(args.num_q_target) + "_seed_" + str(args.seed)
     text = "Star_training target_update_freq: {}  num_q_target: {}  use device {} ".format(args.target_update_freq, args.num_q_target, args.device)
     print(pathname, text)
     write_into_file('search-' + pathname, text) 
     arg_text = str(args)
     write_into_file('search-' + pathname, arg_text) 
+    # tensorboard_name = 'runs' + str(dt_string) + '/' + pathname + "-Dueling"
     tensorboard_name = 'runs/' + pathname 
     writer = SummaryWriter(tensorboard_name)
-    
     if use_gym:
         env = gym.make(args.env_name)
         env.seed(args.seed)
@@ -158,44 +134,20 @@ def train(args, param):
         max_action = float(env.action_space.high[0])
         args.max_episode_steps = env._max_episode_steps
     else:
-        size = 84
-        env = suite.make(
-                args.env_name,
-                has_renderer=False,
-                use_camera_obs=True,
-                ignore_done=True,
-                has_offscreen_renderer=True,
-                camera_height=size,
-                camera_width=size,
-                render_collision_mesh=False,
-                render_visual_mesh=True,
-                camera_name='agentview',
-                use_object_obs=False,
-                camera_depth=True,
-                reward_shaping=True,
-                )
-        
-        
-    state = env.reset()
-    print(state["image"])
-    state , state_buffer = stacked_frames(state, size, args)
-    print(state.shape)
-    state = state.type(torch.FloatTensor).unsqueeze(0)
-    print(state.shape)
-    state = perception(state)
-    print(state.shape)
-    state_dim = state.shape[0]
-    action_dim = env.dof
-    max_action = 1
-    args.max_episode_steps = 200
-    
-    if args.policy == "TD3_ad":
-        policy = TD31v1(state_dim, action_dim, max_action, args)
-    elif args.policy == "DDPG":
-        policy = DDPG(state_dim, action_dim, max_action, args)
-        
-    sys.exit()
-    file_name = "./pytorch_models/{}".format(args.env_name)
+        env = suite.make( args.env_name,
+                has_renderer=False,           # noon-screen renderer
+                has_offscreen_renderer=False, # no off-screen renderer
+                use_object_obs=True,          # use object-centric feature
+                use_camera_obs=False,         # no camera 
+                reward_shaping=True,)
+        state = env.reset()
+        state = createstate(state)
+        state_dim = state.shape[0]
+        action_dim = env.dof
+        max_action = 1
+        args.max_episode_steps = 200
+
+    policy = TD31v1(state_dim, action_dim, max_action, args)
     replay_buffer = ReplayBuffer()
     save_env_vid = False
     total_timesteps = 0
@@ -206,6 +158,11 @@ def train(args, param):
     scores_window = deque(maxlen=100) 
     episode_reward = 0
     evaluations = []
+    file_name = "%s_%s_%s" % ("TD3", args.env_name, str(args.seed))
+    print ("---------------------------------------")
+    print ("Settings: %s" % (file_name))
+    print ("---------------------------------------")
+    # We start the main loop over 500,000 timesteps
     tb_update_counter = 0
     while total_timesteps <  args.max_timesteps:
         tb_update_counter += 1
@@ -220,22 +177,23 @@ def train(args, param):
                 tb_update_counter = 0
                 writer.add_scalar('Reward', episode_reward, total_timesteps)
                 writer.add_scalar('Reward mean ', average_mean, total_timesteps)
-                writer.flush()
             # If we are not at the very beginning, we start the training process of the model
             if total_timesteps != 0:
                 text = "Total Timesteps: {} Episode Num: {} ".format(total_timesteps, episode_num) 
                 text += "Episode steps {} ".format(episode_timesteps)
-                text += "Reward: {:.2f}  Average Re: {:.2f} Time: {}".format(episode_reward, np.mean(scores_window), time_format(time.time()-t0))
+                text += "Reward: {}  Average Re: {:.2f} Time: {}".format(episode_reward, np.mean(scores_window), time_format(time.time()-t0))
                 
                 print(text)
                 write_into_file('search-' + pathname, text)
                 policy.train(replay_buffer, writer, episode_timesteps)
             # We evaluate the episode and we save the policy
             if timesteps_since_eval >= args.eval_freq:
+                policy.save("%s" % (file_name), directory="./pytorch_models")
                 timesteps_since_eval %= args.eval_freq
                 evaluations.append(evaluate_policy(policy, writer, total_timesteps, args, episode_num))
-                save_model = file_name + '-{} reward_{:.2f}-agent{}'.format(episode_num, episode_reward, args.policy)
-                policy.save(save_model)
+                save_model = file_name + '-{}'.format(episode_num)
+                policy.save(save_model, directory="./pytorch_models")
+                np.save("./results/%s" % (file_name), evaluations)
             # When the training step is done, we reset the state of the environment
             if use_gym:
                 obs = env.reset()
@@ -265,8 +223,7 @@ def train(args, param):
 
         
         if total_timesteps % args.target_update_freq == 0:
-            if args.policy == "TD3_ad":
-                policy.hardupdate()
+            policy.hardupdate()
         # The agent performs the action in the environment, then reaches the next state and receives the reward
         new_obs, reward, done, _ = env.step(action)
         if not use_gym:
@@ -293,3 +250,6 @@ def train(args, param):
 
     # We add the last policy evaluation to our list of evaluations and we save our model
     evaluations.append(evaluate_policy(policy, writer, total_timesteps, args, episode_num))
+    if args.save_model: policy.save("%s" % (file_name), directory="./pytorch_models")
+    np.save("./results/%s" % (file_name), evaluations)
+
