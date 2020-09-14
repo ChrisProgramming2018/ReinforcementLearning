@@ -12,7 +12,6 @@ import os
 from collections import deque
 from torch.utils.tensorboard import SummaryWriter
 import torch
-from agent_average_v1 import TD31v1
 from agent import TD3
 from memory import ReplayBuffer
 
@@ -144,7 +143,8 @@ def train(args, param):
             scores_window.append(episode_reward)
             average_mean = np.mean(scores_window)
             if total_timesteps > args.start_timesteps:
-                policy.train(replay_buffer, writer, episode_timesteps)
+                policy.compute_beta(replay_buffer)
+                #policy.train(replay_buffer, writer, episode_timesteps)
             if tb_update_counter > args.tensorboard_freq:
                 tb_update_counter = 0
                 writer.add_scalar('Reward', episode_reward, total_timesteps)
@@ -181,7 +181,7 @@ def train(args, param):
         # The agent performs the action in the environment, then reaches the next state and receives the reward
         new_obs, reward, done, _ = env.step(action)
         # We check if the episode is done
-        done_bool = 0 if episode_timesteps + 1 == 1000 else float(done)
+        done_bool = 1 if episode_timesteps + 1 == 1000 else float(done)
         # We increase the total reward
         episode_reward += reward
         # We store the new transition into the Experience Replay memory (ReplayBuffer)
@@ -192,7 +192,8 @@ def train(args, param):
         total_timesteps += 1
         timesteps_since_eval += 1
         if total_timesteps > args.start_timesteps:
-            policy.train(replay_buffer, writer, args.repeat)
+            policy.compute_beta(replay_buffer)
+            # policy.train(replay_buffer, writer, args.repeat)
 
 
     # We add the last policy evaluation to our list of evaluations and we save our model

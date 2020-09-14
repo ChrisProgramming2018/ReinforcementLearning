@@ -28,7 +28,8 @@ class ReplayBuffer(object):
         return np.array(batch_states), np.array(batch_next_states), np.array(batch_actions), np.array(batch_rewards).reshape(-1, 1), np.array(batch_dones).reshape(-1, 1)
     
     def get_last_k_trajectories(self):
-        ind = range(self.ptr - k, self.ptr)
+        print("get k ", self.k)
+        ind = [x for x in range(self.ptr - self.k, self.ptr)]
         batch_states, batch_next_states, batch_actions, batch_rewards, batch_dones = [], [], [], [], []
         for i in ind: 
             state, next_state, action, reward, done = self.storage[i]

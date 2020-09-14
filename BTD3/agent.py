@@ -35,10 +35,32 @@ class TD3(object):
     
     def compute_beta(self, replay_buffer):
         batch_states, batch_next_states, batch_actions, batch_rewards, batch_dones = replay_buffer.get_last_k_trajectories()
-        R_t = 0
+        #state = torch.Tensor(batch_states).to(self.device)
+        #action = torch.Tensor(batch_actions).to(self.device)
         store_batch = []
         # create a R_i for the k returns from the buffer
-        for i ,idx in enumerate(range(batch_states.shape)):
+        i = 0
+        for idx in range(len(batch_states)):
+            if batch_dones[idx][0] != 0:
+                i = 0
+                print("done ", batch_dones[idx])
+            R_i =  self.discount**i * batch_rewards[idx][0]
+            store_batch.append((batch_states[idx], batch_actions[idx], R_i))
+            i += 1
+        #print(store_batch)
+        delta = 0
+        for b in store_batch:
+            s ,a ,r = b[0], b[1], b[2]
+            a = torch.Tensor(a).to(self.device).unsqueeze(0) 
+            s = torch.Tensor(s).to(self.device).unsqueeze(0) 
+            Q1, Q2 = self.critic(a, s)
+            Q = 0.5 * (Q1 + Q2)
+            delta += Q -r 
+        delta *= (1. / len(batch_states))
+        print("delta ", delta)
+        beta = torch.clamp(delta, 0, 1)
+
+            
 
 
 
@@ -82,7 +104,7 @@ class TD3(object):
             # and min of two  Critic from TD3 to create the different Q Targets
             # compute the average of all Q Targets to get a single value
             target_Q1, target_Q2 = self.target_critic(next_state, next_action) 
-            target_Q = torch.min(target_Q1, target_Q2)
+            target_Q_min = torch.min(target_Q1, target_Q2)
             
            
            # Step 5: Create the update based on the bellman  equation 

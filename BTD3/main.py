@@ -15,8 +15,6 @@ from gym import wrappers
 from torch.autograd import Variable
 from collections import deque
 from utilis import train
-import multiprocessing as mp
-from functools import partial
 
 
 def main(arg):
@@ -35,12 +33,7 @@ def main(arg):
     if arg.save_model and not os.path.exists(dir_model):
         os.makedirs(dir_model)
     print("Created model dir {} ".format(dir_model))
-    processes = []
-    pool = mp.Pool()
-    seeds = [1,2,3,4]
-    func = partial(train, arg)
-    pool.map(func, seeds)
-    pool.close()
+    train(arg,0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -60,6 +53,7 @@ if __name__ == "__main__":
     parser.add_argument('--noise_clip', default=0.5, type=float)        # Maximum value of the Gaussian noise added to the actions (policy)
     parser.add_argument('--policy_freq', default=2, type=int)           # Number of iterations to wait before the policy network (Actor model) is updated
     parser.add_argument('--target_update_freq', default=100, type=int)  # steps between the hard target upate for the critics
+    parser.add_argument('--repeat', default=1, type=int)  # steps between the hard target upate for the critics
     parser.add_argument('--num_q_target', default=6, type=int)          # amount of qtarget nets
     parser.add_argument('--tensorboard_freq', default=1000, type=int)   # every nth episode write in to tensorboard
     parser.add_argument('--device', default='cuda', type=str)           # amount of qtarget nets
